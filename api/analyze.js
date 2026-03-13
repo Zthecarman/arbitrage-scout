@@ -1,7 +1,13 @@
 export default async function handler(req, res) {
-  // Only allow POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // Server-side password check — nobody can bypass this
+  const { password, ...body } = req.body;
+  const validPassword = process.env.APP_PASSWORD;
+  if (!validPassword || password !== validPassword) {
+    return res.status(401).json({ error: "Invalid password" });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -17,13 +23,11 @@ export default async function handler(req, res) {
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(body),
     });
-
     const data = await response.json();
     return res.status(response.status).json(data);
   } catch (error) {
-    console.error("Anthropic proxy error:", error);
     return res.status(500).json({ error: "Proxy request failed" });
   }
 }
