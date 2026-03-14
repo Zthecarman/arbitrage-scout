@@ -150,7 +150,7 @@ Return ONLY a JSON object, no markdown, no explanation:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          password,
+          password: "DavelovesCars911$",
           model: "claude-sonnet-4-20250514",
           max_tokens: 2000,
           messages: [{ role: "user", content: prompt }],
