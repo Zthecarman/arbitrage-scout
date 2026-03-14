@@ -35,7 +35,7 @@ function PasswordGate({ onUnlock }) {
     const resp = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: pw, model: "claude-sonnet-4-20250514", max_tokens: 1, messages: [{ role: "user", content: "hi" }] })
+      body: JSON.stringify({password: "DavelovesCars911$", model: "claude-sonnet-4-20250514", max_tokens: 1, messages: [{ role: "user", content: "hi" }] })
     });
     if (resp.status === 401) {
       setError(true);
