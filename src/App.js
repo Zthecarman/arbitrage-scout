@@ -191,15 +191,23 @@ Return ONLY valid JSON, no markdown:
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: 14 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", letterSpacing: 1, marginBottom: 10 }}>EUROPEAN MARKET</div>
+                {result.european_market?.best_country_to_buy && (
+                  <div style={{ fontSize: 11, marginBottom: 8 }}>
+                    <span style={{ color: "#475569" }}>Best country: </span>
+                    <span style={{ color: "#22c55e", fontWeight: 700 }}>{result.european_market.best_country_to_buy}</span>
+                  </div>
+                )}
                 <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Range: <span style={{ color: "#f1f5f9" }}>€{(result.european_market?.price_range_low_eur || 0).toLocaleString()} – €{(result.european_market?.price_range_high_eur || 0).toLocaleString()}</span></div>
                 <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>Sources: {result.european_market?.best_sources?.join(", ")}</div>
-                <div style={{ fontSize: 11, color: "#475569", fontStyle: "italic" }}>{result.european_market?.supply_notes}</div>
+                <div style={{ fontSize: 11, color: "#475569", fontStyle: "italic", marginBottom: result.european_market?.buying_tips ? 8 : 0 }}>{result.european_market?.supply_notes}</div>
+                {result.european_market?.buying_tips && <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>Tip: {result.european_market.buying_tips}</div>}
               </div>
               <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: 14 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", letterSpacing: 1, marginBottom: 10 }}>US MARKET</div>
                 <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Range: <span style={{ color: "#f1f5f9" }}>{fmtK(result.us_market?.auction_range_low_usd || 0)} – {fmtK(result.us_market?.auction_range_high_usd || 0)}</span></div>
                 <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>Venues: {result.us_market?.best_venues?.join(", ")}</div>
-                <div style={{ fontSize: 11, color: "#475569", fontStyle: "italic" }}>{result.us_market?.demand_notes}</div>
+                <div style={{ fontSize: 11, color: "#475569", fontStyle: "italic", marginBottom: result.us_market?.premium_specs ? 8 : 0 }}>{result.us_market?.demand_notes}</div>
+                {result.us_market?.premium_specs && <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>Premium specs: {result.us_market.premium_specs}</div>}
               </div>
             </div>
 
@@ -222,16 +230,28 @@ Return ONLY valid JSON, no markdown:
             </div>
 
             {result.comparable_sales?.length > 0 && (
-              <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 20 }}>
+              <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 10 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: 1, marginBottom: 10 }}>RECENT COMPARABLE SALES</div>
+                <div style={{ display: "grid", gridTemplateColumns: "80px 110px 65px 70px 80px 1fr", gap: 6, padding: "3px 0 6px", borderBottom: "1px solid #1e293b", fontSize: 9, color: "#334155", letterSpacing: 1 }}>
+                  <span>DATE</span><span>VENUE</span><span>PRICE</span><span>MILEAGE</span><span>COLOR</span><span>NOTES</span>
+                </div>
                 {result.comparable_sales.map((s, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 130px 70px 1fr", gap: 8, padding: "5px 0", borderBottom: "1px solid #0a0f1a", fontSize: 11 }}>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "80px 110px 65px 70px 80px 1fr", gap: 6, padding: "5px 0", borderBottom: "1px solid #0a0f1a", fontSize: 11 }}>
                     <span style={{ color: "#475569" }}>{s.date}</span>
                     <span style={{ color: "#64748b" }}>{s.venue}</span>
                     <span style={{ color: "#f59e0b", fontFamily: "monospace", fontWeight: 700 }}>{s.price}</span>
+                    <span style={{ color: "#94a3b8" }}>{s.mileage}</span>
+                    <span style={{ color: "#cbd5e1" }}>{s.color}</span>
                     <span style={{ color: "#475569", fontStyle: "italic" }}>{s.notes}</span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {result.arbitrage?.best_time_to_buy && (
+              <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 20 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", letterSpacing: 1, marginBottom: 6 }}>BEST TIME TO BUY</div>
+                <div style={{ fontSize: 12, color: "#94a3b8" }}>{result.arbitrage.best_time_to_buy}</div>
               </div>
             )}
 
