@@ -23,6 +23,8 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [showCosts, setShowCosts] = useState(false);
+  const [listings, setListings] = useState(null);
+  const [loadingListings, setLoadingListings] = useState(false);
 
   async function search(q) {
     const sq = q || query;
@@ -68,11 +70,37 @@ Return ONLY valid JSON, no markdown:
       const costs = calcLanded(priceUSD);
       const usAvg = parsed.us_market?.typical_auction_usd || 0;
       const spread = usAvg > 0 ? Math.round(((usAvg - costs.landed) / costs.landed) * 100) : 0;
-      setResult({ ...parsed, _costs: costs, _spread: spread, _priceUSD: priceUSD, _usAvg: usAvg });
+      const r = { ...parsed, _costs: costs, _spread: spread, _priceUSD: priceUSD, _usAvg: usAvg };
+      setResult(r);
+      scrape(parsed.car?.make, parsed.car?.model, parsed.car?.year);
     } catch (err) {
       setError("Analysis failed. Please try again.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function scrape(carMake, carModel, carYear) {
+    setLoadingListings(true);
+    setListings(null);
+    try {
+      const resp = await fetch("/api/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: PW,
+          make: carMake,
+          model: carModel,
+          year_min: carYear ? carYear - 1 : undefined,
+          year_max: carYear ? carYear + 1 : undefined,
+        }),
+      });
+      const data = await resp.json();
+      setListings(data.listings || []);
+    } catch {
+      setListings([]);
+    } finally {
+      setLoadingListings(false);
     }
   }
 
@@ -252,6 +280,28 @@ Return ONLY valid JSON, no markdown:
               <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 20 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", letterSpacing: 1, marginBottom: 6 }}>BEST TIME TO BUY</div>
                 <div style={{ fontSize: 12, color: "#94a3b8" }}>{result.arbitrage.best_time_to_buy}</div>
+              </div>
+            )}
+
+            {(loadingListings || (listings && listings.length > 0)) && (
+              <div style={{ background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 20 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", letterSpacing: 1, marginBottom: 12 }}>
+                  LIVE EUROPEAN LISTINGS {loadingListings ? "(searching...)" : `(${listings.length} found)`}
+                </div>
+                {loadingListings && (
+                  <div style={{ fontSize: 12, color: "#475569" }}>Searching Mobile.de, AutoScout24, Classic Driver...</div>
+                )}
+                {listings && listings.map((l, i) => (
+                  <a key={i} href={l.url} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "grid", gridTemplateColumns: "65px 70px 75px 60px 1fr 90px", gap: 8, padding: "8px 0", borderBottom: "1px solid #0f172a", textDecoration: "none", alignItems: "center" }}>
+                    <span style={{ color: "#f59e0b", fontFamily: "monospace", fontWeight: 700, fontSize: 12 }}>EUR {(l.price_eur || 0).toLocaleString()}</span>
+                    <span style={{ color: "#94a3b8", fontSize: 11 }}>{l.mileage_km ? (l.mileage_km).toLocaleString() + " km" : ""}</span>
+                    <span style={{ color: "#cbd5e1", fontSize: 11 }}>{l.color}</span>
+                    <span style={{ color: "#64748b", fontSize: 11 }}>{l.year}</span>
+                    <span style={{ color: "#475569", fontSize: 11, fontStyle: "italic" }}>{l.description?.slice(0, 60)}</span>
+                    <span style={{ color: "#3b82f6", fontSize: 10, textAlign: "right" }}>{l.source} - {l.location}</span>
+                  </a>
+                ))}
               </div>
             )}
 
