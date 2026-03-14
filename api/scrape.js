@@ -3,64 +3,51 @@ export default async function handler(req, res) {
   const { password, make, model, year_min, year_max } = req.body;
   const validPassword = process.env.APP_PASSWORD;
   if (!validPassword || password !== validPassword) return res.status(401).json({ error: "Invalid password" });
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  const yearStr = year_min ? `${year_min}-${year_max || year_min + 2}` : "";
-  const query = `${yearStr} ${make} ${model}`.trim();
 
-  const prompt = `Search for current ${query} listings for sale in Europe. 
+  const q = encodeURIComponent(`${make} ${model}`);
+  const qRaw = `${make} ${model}`;
+  const yr = year_min || "";
+  const yrMax = year_max || (year_min ? year_min + 3 : "");
 
-Do multiple searches:
-1. Search "site:mobile.de ${query} kaufen" 
-2. Search "site:autoscout24.com ${query} for sale"
-3. Search "${query} for sale classic driver"
-4. Search "${query} for sale classic-trader.com"
-5. Search "${query} te koop OR zu verkaufen OR a vendre" 
+  // Build direct search URLs for each platform
+  const searchLinks = [
+    {
+      source: "Mobile.de",
+      url: `https://suchen.mobile.de/fahrzeuge/search.html?damageUnrepaired=false&isSearchRequest=true&makeModelVariant1.makeId=&query=${q}&yearFrom=${yr}&yearTo=${yrMax}&scopeId=C`,
+      flag: "DE",
+      description: "Germany - usually cheapest prices"
+    },
+    {
+      source: "AutoScout24",
+      url: `https://www.autoscout24.com/lst?sort=price&desc=0&cy=D%2CB%2CNL%2CI%2CF&atype=C&q=${q}&fregfrom=${yr}&fregto=${yrMax}`,
+      flag: "EU",
+      description: "Pan-European - Germany, Belgium, Netherlands, Italy, France"
+    },
+    {
+      source: "Classic Driver",
+      url: `https://www.classicdriver.com/en/cars/search?q=${q}&year_from=${yr}&year_to=${yrMax}&sort=price_asc`,
+      flag: "EU",
+      description: "Premium European dealers"
+    },
+    {
+      source: "Classic-Trader",
+      url: `https://www.classic-trader.com/en/search?q=${encodeURIComponent(qRaw)}&year_from=${yr}&year_to=${yrMax}`,
+      flag: "EU",
+      description: "Specialist classic car marketplace"
+    },
+    {
+      source: "BringaTrailer",
+      url: `https://bringatrailer.com/search/?s=${q}`,
+      flag: "US",
+      description: "US auction results and active listings"
+    },
+    {
+      source: "Collecting Cars",
+      url: `https://collectingcars.com/for-sale/?search=${q}`,
+      flag: "UK",
+      description: "UK - strong European inventory"
+    }
+  ];
 
-For each actual listing page you find (not search results pages, actual car listings), extract:
-- The exact URL of the listing
-- Price (convert to EUR number, no currency symbol)
-- Mileage in km (convert miles to km if needed)
-- Color
-- Year
-- Country/location
-- One line description
-- Which site it came from
-
-Return ONLY this exact JSON with no markdown or explanation:
-{"listings":[{"url":"https://...","price_eur":95000,"mileage_km":45000,"color":"Rosso Corsa","year":2000,"location":"Germany","description":"Full service history, one owner","source":"Mobile.de"}]}
-
-Include only listings with real URLs you actually found. Aim for 5-10 listings.`;
-
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "web-search-2025-03-05",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 5000,
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    const data = await response.json();
-    const textBlock = data.content?.find(b => b.type === "text");
-    const text = textBlock?.text || "{}";
-    let parsed;
-    try {
-      const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { listings: [] };
-    } catch { parsed = { listings: [] }; }
-    const listings = (parsed.listings || [])
-      .filter(l => l.url && l.url.startsWith("http"))
-      .sort((a, b) => (a.price_eur || 0) - (b.price_eur || 0));
-    return res.status(200).json({ listings });
-  } catch (error) {
-    return res.status(500).json({ error: error.message, listings: [] });
-  }
+  return res.status(200).json({ searchLinks });
 }
