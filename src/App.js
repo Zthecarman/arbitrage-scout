@@ -1,24 +1,21 @@
 import { useState } from "react";
 
-const FX = { EUR: 1.09, GBP: 1.27, JPY: 0.0067, CHF: 1.11 };
+const FX = { EUR: 1.09 };
 const fmt = n => "$" + Math.round(n).toLocaleString();
 const fmtK = n => n >= 1000000 ? "$" + (n/1000000).toFixed(2) + "M" : "$" + Math.round(n/1000) + "k";
+const PW = "DavelovesCars911$";
+const IMPORT_COSTS = { shipping: 2750, duty: 0.025, reciprocal: 0.10, hmf: 0.00125, mpf: 0.003464, broker: 900, inland: 1200, prep: 600 };
 
-const IMPORT_COSTS = {
-  shipping: 2750, duty: 0.025, reciprocal: 0.10,
-  hmf: 0.00125, mpf: 0.003464, broker: 900, inland: 1200, prep: 600
-};
-
-function calcLanded(priceUSD) {
-  const duty = Math.round(priceUSD * IMPORT_COSTS.duty);
-  const recip = Math.round(priceUSD * IMPORT_COSTS.reciprocal);
-  const hmf = Math.round(priceUSD * IMPORT_COSTS.hmf);
-  const mpf = Math.min(Math.max(Math.round(priceUSD * IMPORT_COSTS.mpf), 34), 652);
-  const importTotal = IMPORT_COSTS.shipping + duty + recip + hmf + mpf + IMPORT_COSTS.broker + IMPORT_COSTS.inland + IMPORT_COSTS.prep;
-  return { priceUSD, importTotal, landed: priceUSD + importTotal, duty, recip, hmf, mpf };
+function calcLanded(p) {
+  const duty = Math.round(p * IMPORT_COSTS.duty);
+  const recip = Math.round(p * IMPORT_COSTS.reciprocal);
+  const hmf = Math.round(p * IMPORT_COSTS.hmf);
+  const mpf = Math.min(Math.max(Math.round(p * IMPORT_COSTS.mpf), 34), 652);
+  const total = IMPORT_COSTS.shipping + duty + recip + hmf + mpf + IMPORT_COSTS.broker + IMPORT_COSTS.inland + IMPORT_COSTS.prep;
+  return { priceUSD: p, importTotal: total, landed: p + total, duty, recip, hmf, mpf };
 }
 
-const EXAMPLE_SEARCHES = [
+const EXAMPLES = [
   "1995 Ferrari F355 Berlinetta",
   "1998 Porsche 911 Carrera 4S",
   "2001 BMW M3 E46",
@@ -27,10 +24,265 @@ const EXAMPLE_SEARCHES = [
   "1999 Porsche 911 GT3",
 ];
 
-function PasswordGate({ onUnlock }) {
-  const [pw, setPw] = useState("");
-  const [error, setError] = useState(false);
+export default function App() {
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [showCosts, setShowCosts] = useState(false);
 
-  async function tryUnlock() {
-    const resp = await fetch("/api/analyze", {
-      method: "POST",
+  async function search(q) {
+    const sq = q || query;
+    if (!sq.trim()) return;
+    setLoading(true);
+    setResult(null);
+    setError(null);
+
+    const prompt = "You are a specialist in European exotic and collector car arbitrage.\n\nFind arbitrage opportunities for: \"" + sq + "\"\n\nResearch European prices (Germany, UK, France, Belgium, Netherlands, Italy, Switzerland) and US auction prices (BaT, Mecum, RM Sothebys, Broad Arrow, Gooding).\n\nImport context: Cars 25+ years old are EPA/DOT exempt. Total duty ~12.5%. Fixed costs ~$6,450. Under 25 years: add $15,000-35,000.\n\nReturn ONLY valid JSON, no markdown:\n{\"car\":{\"year\":0,\"make\":\"\",\"model\":\"\",\"trim\":\"\",\"over_25_years\":true,\"description\":\"\"},\"european_market\":{\"typical_price_eur\":0,\"price_range_low_eur\":0,\"price_range_high_eur\":0,\"best_sources\":[\"\"],\"supply_notes\":\"\"},\"us_market\":{\"typical_auction_usd\":0,\"auction_range_low_usd\":0,\"auction_range_high_usd\":0,\"best_venues\":[\"\"],\"demand_notes\":\"\"},\"arbitrage\":{\"opportunity_score\":0,\"verdict\":\"\",\"summary\":\"\",\"pros\":[\"\"],\"cons\":[\"\"],\"due_diligence\":[\"\"]},\"comparable_sales\":[{\"date\":\"\",\"venue\":\"\",\"price\":\"\",\"notes\":\"\"}]}";
+
+    try {
+      const resp = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: PW,
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (resp.status === 401) { setError("Access denied."); return; }
+      const data = await resp.json();
+      const text = data.content && data.content[0] ? data.content[0].text : "{}";
+      const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+      const eurPrice = parsed.european_market ? (parsed.european_market.typical_price_eur || 0) : 0;
+      const priceUSD = Math.round(eurPrice * FX.EUR);
+      const costs = calcLanded(priceUSD);
+      const usAvg = parsed.us_market ? (parsed.us_market.typical_auction_usd || 0) : 0;
+      const spread = usAvg > 0 ? Math.round(((usAvg - costs.landed) / costs.landed) * 100) : 0;
+      setResult(Object.assign({}, parsed, { _costs: costs, _spread: spread, _priceUSD: priceUSD, _usAvg: usAvg }));
+    } catch (err) {
+      setError("Analysis failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const score = result && result.arbitrage ? (result.arbitrage.opportunity_score || 0) : 0;
+  const scoreColor = score >= 70 ? "#22c55e" : score >= 45 ? "#f59e0b" : "#ef4444";
+  const sp = result ? (result._spread || 0) : 0;
+  const spreadColor = sp > 15 ? "#22c55e" : sp > 0 ? "#f59e0b" : "#ef4444";
+
+  const s = { minHeight: "100vh", background: "#020817", color: "#f1f5f9", fontFamily: "Inter, sans-serif" };
+  const card = { background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: 14 };
+
+  return (
+    <div style={s}>
+      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+
+      <div style={{ borderBottom: "1px solid #0f172a", padding: "20px 28px" }}>
+        <div style={{ maxWidth: 860, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: 4, color: "#f59e0b", fontWeight: 700, marginBottom: 4 }}>EXOTIC ARBITRAGE INTELLIGENCE</div>
+            <div style={{ fontFamily: "Playfair Display, serif", fontSize: 24, color: "#f8fafc" }}>European Scout</div>
+          </div>
+          <div style={{ display: "flex", gap: 20 }}>
+            {[["12.5%", "EU DUTY"], ["25yr", "EPA EXEMPT"], ["$6.5k", "FIXED COSTS"]].map(([v, l]) => (
+              <div key={l} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#f59e0b" }}>{v}</div>
+                <div style={{ fontSize: 9, color: "#475569" }}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "32px 28px 0" }}>
+        <div style={{ marginBottom: 12, fontSize: 13, color: "#64748b" }}>Enter any year, make, model, and trim to find European arbitrage opportunities</div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && search()}
+            placeholder="e.g. 1997 Ferrari F355 Spider, 1998 Porsche 911 GT3..."
+            style={{ flex: 1, padding: "12px 16px", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, color: "#f1f5f9", fontSize: 14, outline: "none" }}
+          />
+          <button
+            onClick={() => search()}
+            disabled={loading || !query.trim()}
+            style={{ padding: "12px 24px", background: loading ? "#1e293b" : "linear-gradient(135deg, #b45309, #f59e0b)", border: "none", borderRadius: 8, color: loading ? "#475569" : "#fff", fontSize: 13, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer" }}
+          >
+            {loading ? "Searching..." : "Analyze"}
+          </button>
+        </div>
+
+        {!result && !loading && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11, color: "#334155", marginBottom: 8 }}>TRY AN EXAMPLE</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {EXAMPLES.map(ex => (
+                <button key={ex} onClick={() => { setQuery(ex); search(ex); }}
+                  style={{ padding: "5px 12px", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 20, color: "#64748b", fontSize: 11, cursor: "pointer" }}>
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {loading && (
+          <div style={{ marginTop: 40, textAlign: "center", padding: "60px 0" }}>
+            <div style={{ fontSize: 13, color: "#475569", marginBottom: 8 }}>Searching European markets and US auction comps...</div>
+            <div style={{ fontSize: 11, color: "#334155" }}>Analyzing: "{query}"</div>
+          </div>
+        )}
+
+        {error && <div style={{ marginTop: 20, padding: 16, background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, fontSize: 12, color: "#fca5a5" }}>{error}</div>}
+
+        {result && !loading && (
+          <div style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <div style={{ fontFamily: "Playfair Display, serif", fontSize: 26, color: "#f8fafc" }}>
+                  {result.car ? result.car.year : ""} {result.car ? result.car.make : ""} {result.car ? result.car.model : ""}
+                </div>
+                <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{result.car ? result.car.trim : ""}</div>
+                <div style={{ fontSize: 12, color: "#475569", marginTop: 6, maxWidth: 500 }}>{result.car ? result.car.description : ""}</div>
+              </div>
+              <div style={{ textAlign: "center", background: "#0f172a", border: "2px solid " + scoreColor, borderRadius: 12, padding: "16px 24px", minWidth: 100 }}>
+                <div style={{ fontSize: 36, fontWeight: 800, color: scoreColor, fontFamily: "monospace" }}>{score}</div>
+                <div style={{ fontSize: 9, color: "#475569", letterSpacing: 2 }}>OPPORTUNITY</div>
+                <div style={{ fontSize: 10, color: scoreColor, fontWeight: 700, marginTop: 4 }}>{result.arbitrage ? result.arbitrage.verdict : ""}</div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginBottom: 16 }}>
+              {[
+                ["EU TYPICAL", "EUR " + ((result.european_market ? result.european_market.typical_price_eur || 0 : 0).toLocaleString()), "#f1f5f9"],
+                ["US COST", fmt(result._priceUSD || 0), "#f59e0b"],
+                ["IMPORT ADD", fmt(result._costs ? result._costs.importTotal : 0), "#64748b"],
+                ["TOTAL LANDED", fmt(result._costs ? result._costs.landed : 0), "#f1f5f9"],
+                ["US AUCTION AVG", fmtK(result._usAvg || 0), "#f59e0b"],
+                ["SPREAD", (sp > 0 ? "+" : "") + sp + "%", spreadColor],
+              ].map(([label, val, color]) => (
+                <div key={label} style={card}>
+                  <div style={{ fontSize: 9, color: "#475569", letterSpacing: 1, marginBottom: 4 }}>{label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color, fontFamily: "monospace" }}>{val}</div>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={() => setShowCosts(!showCosts)}
+              style={{ background: "none", border: "1px solid #1e293b", borderRadius: 6, color: "#475569", fontSize: 11, padding: "5px 12px", cursor: "pointer", marginBottom: showCosts ? 0 : 16 }}>
+              {showCosts ? "Hide cost breakdown" : "Show full import cost breakdown"}
+            </button>
+
+            {showCosts && (
+              <div style={{ background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 11 }}>
+                {[
+                  ["Purchase price (USD)", result._priceUSD || 0],
+                  ["Ocean freight", IMPORT_COSTS.shipping],
+                  ["Base duty 2.5%", result._costs ? result._costs.duty : 0],
+                  ["EU reciprocal tariff 10%", result._costs ? result._costs.recip : 0],
+                  ["HMF + MPF", (result._costs ? result._costs.hmf || 0 : 0) + (result._costs ? result._costs.mpf || 0 : 0)],
+                  ["Broker + inland + prep", IMPORT_COSTS.broker + IMPORT_COSTS.inland + IMPORT_COSTS.prep],
+                ].map(([l, v]) => (
+                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #0f172a", color: "#64748b" }}>
+                    <span>{l}</span>
+                    <span style={{ fontFamily: "monospace", color: "#94a3b8" }}>{fmt(v)}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0", fontWeight: 700, color: "#f59e0b", fontSize: 13 }}>
+                  <span>Total landed</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(result._costs ? result._costs.landed : 0)}</span>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div style={card}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", letterSpacing: 1, marginBottom: 10 }}>EUROPEAN MARKET</div>
+                <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+                  Range: EUR {(result.european_market ? result.european_market.price_range_low_eur || 0 : 0).toLocaleString()} - {(result.european_market ? result.european_market.price_range_high_eur || 0 : 0).toLocaleString()}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
+                  Sources: {result.european_market && result.european_market.best_sources ? result.european_market.best_sources.join(", ") : ""}
+                </div>
+                <div style={{ fontSize: 11, color: "#475569", fontStyle: "italic" }}>{result.european_market ? result.european_market.supply_notes : ""}</div>
+              </div>
+              <div style={card}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", letterSpacing: 1, marginBottom: 10 }}>US MARKET</div>
+                <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+                  Range: {fmtK(result.us_market ? result.us_market.auction_range_low_usd || 0 : 0)} - {fmtK(result.us_market ? result.us_market.auction_range_high_usd || 0 : 0)}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
+                  Venues: {result.us_market && result.us_market.best_venues ? result.us_market.best_venues.join(", ") : ""}
+                </div>
+                <div style={{ fontSize: 11, color: "#475569", fontStyle: "italic" }}>{result.us_market ? result.us_market.demand_notes : ""}</div>
+              </div>
+            </div>
+
+            <div style={{ ...card, marginBottom: 10, fontSize: 13, color: "#cbd5e1", lineHeight: 1.75 }}>
+              {result.arbitrage ? result.arbitrage.summary : ""}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div style={card}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#22c55e", letterSpacing: 1, marginBottom: 8 }}>OPPORTUNITY</div>
+                {result.arbitrage && result.arbitrage.pros ? result.arbitrage.pros.map((p, i) => (
+                  <div key={i} style={{ fontSize: 11, color: "#94a3b8", padding: "3px 0", borderBottom: "1px solid #0a0f1a" }}>- {p}</div>
+                )) : null}
+              </div>
+              <div style={card}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#ef4444", letterSpacing: 1, marginBottom: 8 }}>RISK FACTORS</div>
+                {result.arbitrage && result.arbitrage.cons ? result.arbitrage.cons.map((c, i) => (
+                  <div key={i} style={{ fontSize: 11, color: "#94a3b8", padding: "3px 0", borderBottom: "1px solid #0a0f1a" }}>- {c}</div>
+                )) : null}
+              </div>
+            </div>
+
+            <div style={{ background: "#150c00", border: "1px solid #78350f", borderRadius: 8, padding: 14, marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", letterSpacing: 1, marginBottom: 8 }}>DUE DILIGENCE CHECKLIST</div>
+              {result.arbitrage && result.arbitrage.due_diligence ? result.arbitrage.due_diligence.map((d, i) => (
+                <div key={i} style={{ fontSize: 11, color: "#d97706", padding: "2px 0" }}>[ ] {d}</div>
+              )) : null}
+            </div>
+
+            {result.comparable_sales && result.comparable_sales.length > 0 && (
+              <div style={{ ...card, marginBottom: 20 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: 1, marginBottom: 10 }}>RECENT COMPARABLE SALES</div>
+                {result.comparable_sales.map((s, i) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 130px 70px 1fr", gap: 8, padding: "5px 0", borderBottom: "1px solid #0a0f1a", fontSize: 11 }}>
+                    <span style={{ color: "#475569" }}>{s.date}</span>
+                    <span style={{ color: "#64748b" }}>{s.venue}</span>
+                    <span style={{ color: "#f59e0b", fontFamily: "monospace", fontWeight: 700 }}>{s.price}</span>
+                    <span style={{ color: "#475569", fontStyle: "italic" }}>{s.notes}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginBottom: 32 }}>
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && search()}
+                placeholder="Search another car..."
+                style={{ flex: 1, padding: "10px 14px", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, color: "#f1f5f9", fontSize: 13, outline: "none" }}
+              />
+              <button onClick={() => search()} disabled={loading || !query.trim()}
+                style={{ padding: "10px 20px", background: "linear-gradient(135deg, #b45309, #f59e0b)", border: "none", borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Analyze
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: "#1e293b", textAlign: "center", marginBottom: 32 }}>
+              AI analysis for research purposes only. Verify all comps independently before committing capital.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
