@@ -72,7 +72,9 @@ Return ONLY valid JSON, no markdown:
       const spread = usAvg > 0 ? Math.round(((usAvg - costs.landed) / costs.landed) * 100) : 0;
       const r = { ...parsed, _costs: costs, _spread: spread, _priceUSD: priceUSD, _usAvg: usAvg };
       setResult(r);
-      scrape(parsed.car?.make, parsed.car?.model, parsed.car?.year);
+      if (parsed.car?.make && parsed.car?.model) {
+        scrape(parsed.car.make, parsed.car.model, parsed.car.year);
+      }
     } catch (err) {
       setError("Analysis failed. Please try again.");
     } finally {
@@ -96,7 +98,7 @@ Return ONLY valid JSON, no markdown:
         }),
       });
       const data = await resp.json();
-      setListings(data.listings || []);
+      setListings(data.searchLinks || data.listings || []);
     } catch {
       setListings([]);
     } finally {
@@ -286,20 +288,21 @@ Return ONLY valid JSON, no markdown:
             {(loadingListings || (listings && listings.length > 0)) && (
               <div style={{ background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 20 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", letterSpacing: 1, marginBottom: 12 }}>
-                  LIVE EUROPEAN LISTINGS {loadingListings ? "(searching...)" : `(${listings.length} found)`}
+                  SEARCH LIVE EUROPEAN LISTINGS
                 </div>
                 {loadingListings && (
-                  <div style={{ fontSize: 12, color: "#475569" }}>Searching Mobile.de, AutoScout24, Classic Driver...</div>
+                  <div style={{ fontSize: 12, color: "#475569" }}>Building search links...</div>
                 )}
                 {listings && listings.map((l, i) => (
                   <a key={i} href={l.url} target="_blank" rel="noopener noreferrer"
-                    style={{ display: "grid", gridTemplateColumns: "65px 70px 75px 60px 1fr 90px", gap: 8, padding: "8px 0", borderBottom: "1px solid #0f172a", textDecoration: "none", alignItems: "center" }}>
-                    <span style={{ color: "#f59e0b", fontFamily: "monospace", fontWeight: 700, fontSize: 12 }}>EUR {(l.price_eur || 0).toLocaleString()}</span>
-                    <span style={{ color: "#94a3b8", fontSize: 11 }}>{l.mileage_km ? (l.mileage_km).toLocaleString() + " km" : ""}</span>
-                    <span style={{ color: "#cbd5e1", fontSize: 11 }}>{l.color}</span>
-                    <span style={{ color: "#64748b", fontSize: 11 }}>{l.year}</span>
-                    <span style={{ color: "#475569", fontSize: 11, fontStyle: "italic" }}>{l.description?.slice(0, 60)}</span>
-                    <span style={{ color: "#3b82f6", fontSize: 10, textAlign: "right" }}>{l.source} - {l.location}</span>
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: 6, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, textDecoration: "none", cursor: "pointer" }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = "#f59e0b"}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = "#1e293b"}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9" }}>{l.source} {l.flag}</div>
+                      <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{l.description}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#3b82f6", whiteSpace: "nowrap", marginLeft: 12 }}>Search now →</div>
                   </a>
                 ))}
               </div>
